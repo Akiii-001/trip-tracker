@@ -56,6 +56,8 @@ st.markdown(
         background:#fff; border:1px solid #d7ecec; border-radius:14px;
         padding:14px 16px; box-shadow:0 2px 8px rgba(15,46,46,0.05);
       }
+      [data-testid="stMetricValue"] { font-size: 1.5rem; }
+      [data-testid="stMetricLabel"] { font-size: 0.9rem; }
       .stButton > button { border-radius:12px; font-weight:600; padding:0.5rem 1rem; }
       [data-testid="stExpander"] { border:1px solid #d7ecec; border-radius:14px; overflow:hidden; }
       .timeline { display:flex; gap:12px; flex-wrap:wrap; margin: 6px 0 4px; }
@@ -229,7 +231,7 @@ else:
 
 # ------------------------- tabs ------------------------- #
 
-tab_plan, tab_prices = st.tabs(["✏️  Plan", "📈  Prices"])
+tab_plan, tab_prices, tab_expenses = st.tabs(["✏️  Plan", "📈  Prices", "💰  Expenses"])
 
 
 def _clean_records(df: pd.DataFrame) -> list[dict]:
@@ -326,6 +328,7 @@ with tab_plan:
                 "currency": currency.strip() or CURRENCY,
                 "flights": _clean_records(flights_edited),
                 "hotels": _clean_records(hotels_edited),
+                "expenses": trip.get("expenses"),  # preserve expenses
             }
             save_trip(trip_key, new_cfg)
             st.success("Saved.")
@@ -366,10 +369,13 @@ with tab_prices:
                 a.markdown(f"**{label}**")
                 b.metric("Latest", f"₹{latest['price']:,.0f}")
                 c.metric("Lowest seen", f"₹{sub['price'].min():,.0f}")
-                st.line_chart(
-                    sub.set_index("checked_at")[["price"]].rename(columns={"price": label}),
-                    height=180,
-                )
+                if len(sub) >= 2:
+                    st.line_chart(
+                        sub.set_index("checked_at")[["price"]].rename(columns={"price": label}),
+                        height=180,
+                    )
+                else:
+                    st.caption("📊 Collecting data — trend chart appears after the next daily check.")
 
         # ---- Hotels grouped by island ---- #
         ho = hist[hist["item_type"] == "hotel"].copy()
@@ -401,7 +407,7 @@ with tab_prices:
                     st.dataframe(sdf, use_container_width=True, hide_index=True)
 
                     best = ho[(ho["is_best"]) & (ho["label"].astype(str).str.startswith(island))]
-                    if not best.empty:
+                    if len(best) >= 2:
                         best = best.sort_values("checked_at")
                         st.caption("Best-value trend (₹/night)")
                         st.line_chart(
@@ -440,3 +446,126 @@ with tab_prices:
                                 )
                             else:
                                 st.warning("No per-site prices returned for that hotel.")
+
+
+# ============================== EXPENSES TAB ============================== #
+
+# Justified planned defaults for a ~5-day Andaman trip for 2 people (INR).
+# These are starting points (editable) based on typical 2026 costs:
+#   - Inter-island ferries: private ferries (Makruzz/Nautika/Green Ocean)
+#     ~₹1,200/person/leg × ~3 legs × 2 people.
+#   - Food: ~₹1,350/person/day × 5 days × 2 (mid-range cafes/seafood).
+#   - Local transport: autos/taxis + a scooter rental over 5 days.
+#   - Activities: scuba (~₹3.5k/pax) + snorkeling/sea-walk for two.
+#   - Tickets/permits: Cellular Jail + light & sound, beach/Ross entries.
+#   - Shopping & buffer: souvenirs + contingency.
+DEFAULT_EXPENSES_OTHERS = [
+    {"category": "Inter-island ferries", "planned": 7500, "actual": 0},
+    {"category": "Food & drinks", "planned": 13500, "actual": 0},
+    {"category": "Local transport (auto/taxi/scooter)", "planned": 4000, "actual": 0},
+    {"category": "Activities (scuba/snorkel/sea-walk)", "planned": 10000, "actual": 0},
+    {"category": "Tickets & permits", "planned": 1500, "actual": 0},
+    {"category": "Shopping & souvenirs", "planned": 3000, "actual": 0},
+    {"category": "Buffer / misc", "planned": 3000, "actual": 0},
+]
+
+
+def _flights_latest_sum(h: pd.DataFrame) -> float:
+    if h.empty:
+        return 0.0
+    fl = h[h["item_type"] == "flight"]
+    if fl.empty:
+        return 0.0
+    return float(_latest_per_item(fl)["price"].sum())
+
+
+def _hotel_est_total(h: pd.DataFrame, cfg: dict) -> float:
+    if h.empty:
+        return 0.0
+    ho = h[h["item_type"] == "hotel"].copy()
+    best = ho[ho["label"].astype(str).str.endswith("(best value)")]
+    if best.empty:
+        return 0.0
+    best_latest = _latest_per_item(best)
+    total = 0.0
+    for hotel in cfg.get("hotels", []):
+        island = hotel.get("label", "")
+        try:
+            nights = max(1, (date.fromisoformat(str(hotel["checkout"])) - date.fromisoformat(str(hotel["checkin"]))).days)
+        except Exception:
+            nights = 1
+        match = best_latest[best_latest["label"].astype(str).str.startswith(island)]
+        if not match.empty:
+            total += float(match.iloc[0]["price"]) * nights
+    return total
+
+
+with tab_expenses:
+    st.markdown("#### 💰 Planned vs actual expenses")
+    st.caption(
+        "Flights & hotels pull from the live tracker (they change as deals "
+        "appear). Other categories are justified estimates for a 5-day "
+        "Andaman trip for 2 — edit freely and fill in 'actual' as you book."
+    )
+
+    exp = trip.get("expenses") or {}
+    others = exp.get("others") or [dict(x) for x in DEFAULT_EXPENSES_OTHERS]
+
+    flights_planned = _flights_latest_sum(hist)
+    hotels_planned = _hotel_est_total(hist, trip)
+
+    # Auto rows (planned from live data, actual editable).
+    st.markdown("**Auto-tracked (from live prices)**")
+    ca, cb = st.columns(2)
+    with ca:
+        st.metric("✈️ Flights — planned", f"₹{flights_planned:,.0f}" if flights_planned else "— (run a check)")
+        flights_actual = st.number_input(
+            "Flights — actual paid", min_value=0, value=int(exp.get("flights_actual") or 0),
+            key=f"fa_{trip_key}", disabled=not admin,
+        )
+    with cb:
+        st.metric("🏨 Hotels — planned", f"₹{hotels_planned:,.0f}" if hotels_planned else "— (run a check)")
+        hotels_actual = st.number_input(
+            "Hotels — actual paid", min_value=0, value=int(exp.get("hotels_actual") or 0),
+            key=f"ha_{trip_key}", disabled=not admin,
+        )
+
+    st.markdown("**Other expenses**")
+    others_df = pd.DataFrame(others)
+    others_edited = st.data_editor(
+        others_df, num_rows="dynamic", use_container_width=True, key=f"exp_{trip_key}",
+        disabled=not admin,
+        column_config={
+            "category": st.column_config.TextColumn("Category"),
+            "planned": st.column_config.NumberColumn("Planned ₹", min_value=0),
+            "actual": st.column_config.NumberColumn("Actual ₹", min_value=0),
+        },
+    )
+
+    # Totals.
+    others_planned = float(pd.to_numeric(others_edited.get("planned"), errors="coerce").fillna(0).sum()) if not others_edited.empty else 0.0
+    others_actual = float(pd.to_numeric(others_edited.get("actual"), errors="coerce").fillna(0).sum()) if not others_edited.empty else 0.0
+    total_planned = flights_planned + hotels_planned + others_planned
+    total_actual = float(flights_actual) + float(hotels_actual) + others_actual
+    diff = total_actual - total_planned
+
+    st.divider()
+    t1, t2, t3, t4 = st.columns(4)
+    t1.metric("Planned total", f"₹{total_planned:,.0f}")
+    t2.metric("Actual so far", f"₹{total_actual:,.0f}")
+    t3.metric("Difference", f"₹{diff:,.0f}", delta=f"{diff:,.0f}", delta_color="inverse")
+    travelers_n = int(trip.get("travelers", 2)) or 1
+    t4.metric("Planned / person", f"₹{total_planned / travelers_n:,.0f}")
+
+    if admin:
+        if st.button("💾 Save expenses", use_container_width=True, type="primary"):
+            new_exp = {
+                "others": others_edited.where(pd.notnull(others_edited), None).to_dict("records"),
+                "flights_actual": int(flights_actual),
+                "hotels_actual": int(hotels_actual),
+            }
+            save_trip(trip_key, {**trip, "expenses": new_exp})
+            st.success("Expenses saved.")
+            st.rerun()
+    else:
+        st.info("👀 View-only — enter the admin password in the sidebar to edit expenses.")
