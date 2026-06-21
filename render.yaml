@@ -1,0 +1,42 @@
+# Render service definition for the trip-tracker background worker.
+# Same pattern as the stock-bot: a free "web" service running a long-lived
+# loop that also serves /health so Render's port-bind check passes. Free
+# web services sleep after ~15 min of HTTP inactivity, so a cron-job.org
+# ping to /health keeps it awake during the part of the day you want checks.
+
+services:
+  - type: web
+    name: trip-tracker-worker
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install --upgrade pip && pip install -r requirements-worker.txt
+    startCommand: python worker.py
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # Checks are triggered by a daily cron-job.org hit to /run (07:00 IST),
+      # so the internal timer stays off to avoid duplicate SerpApi spend.
+      - key: AUTO_CHECK
+        value: "0"
+      - key: HEARTBEAT_ENABLED
+        value: "1"
+      - key: MAX_RUNTIME_HOURS
+        value: "12"
+      # Secrets — set these in the Render dashboard, never commit them.
+      - key: TRAVELPAYOUTS_TOKEN
+        sync: false
+      - key: TRAVELPAYOUTS_MARKET
+        value: ""
+      - key: SERPAPI_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false

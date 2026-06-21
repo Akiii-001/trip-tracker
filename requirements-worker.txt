@@ -1,0 +1,4 @@
+# Lean worker deps — no Streamlit needed for the background price checker.
+supabase>=2.7.0
+requests>=2.31.0
+python-dotenv>=1.0.0

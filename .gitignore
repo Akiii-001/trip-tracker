@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+# Local fallback data (when not using Supabase)
+trip.json
+trips.json
+tracker_state.json
+price_history.json
+.streamlit/secrets.toml
