@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
-HEARTBEAT_TIME = dtime(7, 5)  # daily heartbeat ~07:05 IST (just after the 7:00 run)
+HEARTBEAT_TIME = dtime(10, 5)  # daily heartbeat ~10:05 IST (just after the 10:00 run)
 
 
 def _bool_env(name: str, default: bool) -> bool:

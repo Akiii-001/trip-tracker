@@ -1,6 +1,6 @@
 # Deploying the Trip Tracker (free)
 
-Goal: the tracker runs **once a day at ~07:00 IST** in the cloud, stores
+Goal: the tracker runs **once a day at ~10:00 IST** in the cloud, stores
 data in Supabase, and sends Telegram alerts — without your laptop being on.
 
 Architecture (same pattern as the stock-bot):
@@ -59,7 +59,7 @@ git push -u origin main
 1. Create a free account at <https://cron-job.org>.
 2. New cron job:
    - **URL**: `https://<your-service>.onrender.com/run`
-   - **Schedule**: every day at **01:30 UTC** (= 07:00 IST).
+   - **Schedule**: every day at **04:30 UTC** (= 10:00 IST).
    - (Optional) a second job hitting `/health` a minute earlier to pre-wake
      the dyno, so the cold start doesn't delay the run.
 3. Save. That's it — it now runs daily on its own.
