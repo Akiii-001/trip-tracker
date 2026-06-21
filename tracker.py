@@ -442,3 +442,29 @@ def load_history(limit: int = 5000, trip: str | None = None) -> list[dict[str, A
         except Exception:
             pass
     return []
+
+
+def log_manual_hotel(
+    trip_key: str, island_id: str, island_label: str, det: dict[str, Any]
+) -> None:
+    """Log an on-demand hotel detail lookup into price history.
+
+    Uses the SAME item_id the daily worker uses for that hotel, so manual
+    checks blend into the hotel's series and become comparison points later.
+    """
+    token = det.get("property_token", "")
+    _log_price(
+        item_id=f"{trip_key}:hotel:{island_id}:{token}",
+        item_type="hotel",
+        label=det.get("hotel_name", "Unknown"),
+        price=float(det.get("price", 0) or 0),
+        currency=det.get("currency", CURRENCY),
+        source=det.get("cheapest_site", ""),
+        meta={
+            "island": island_label,
+            "rating": det.get("rating"),
+            "reviews": det.get("reviews"),
+            "total_price": det.get("price_total"),
+        },
+        trip=trip_key,
+    )

@@ -432,6 +432,14 @@ with tab_prices:
                                     hcfg["query"], hcfg["checkin"], hcfg["checkout"],
                                     int(trip.get("travelers", 1)),
                                 )
+                            # Save this lookup so it becomes a comparison point later.
+                            if det:
+                                try:
+                                    from tracker import log_manual_hotel
+
+                                    log_manual_hotel(trip_key, hcfg["id"], island, det)
+                                except Exception as exc:
+                                    print(f"log_manual_hotel failed: {exc}")
                             st.session_state[f"sites_{island}"] = (sel, det)
                         saved = st.session_state.get(f"sites_{island}")
                         if saved:
@@ -444,6 +452,7 @@ with tab_prices:
                                     ),
                                     use_container_width=True, hide_index=True,
                                 )
+                                st.caption("✅ Saved to price history — future checks will compare against this.")
                             else:
                                 st.warning("No per-site prices returned for that hotel.")
 
