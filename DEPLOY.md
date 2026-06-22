@@ -54,7 +54,34 @@ git push -u origin main
    JSON), then `…/run` once — that triggers a check and should send any alerts
    + populate Supabase. (Uses ~6 SerpApi credits.)
 
-## 4. cron-job.org — the daily 07:00 IST trigger
+## 4. Daily trigger — GitHub Actions (recommended)
+
+A `.github/workflows/daily-check.yml` workflow runs the check daily at
+04:30 UTC (10:00 IST) directly on GitHub's runner — no Render cold-start
+issues. This is the reliable, free option.
+
+1. In your GitHub repo → **Settings → Secrets and variables → Actions →
+   New repository secret**, add each of:
+   - `SERPAPI_KEY`
+   - `SUPABASE_URL`
+   - `SUPABASE_KEY`
+   - `TELEGRAM_BOT_TOKEN`
+   - `TELEGRAM_CHAT_ID`
+   - `TRAVELPAYOUTS_TOKEN` (optional)
+2. Push the workflow (already in the repo).
+3. Repo → **Actions** tab → **Daily trip price check** → **Run workflow**
+   to test immediately. Check the run logs for `run_all complete`, your
+   Telegram, and Supabase.
+
+> With this, Render and cron-job.org are **optional**. Disable the
+> cron-job.org jobs so they don't send failure emails. You can keep or
+> delete the Render worker.
+
+## 4b. (Alternative, unreliable on free tier) cron-job.org → Render /run
+
+Free Render dynos cold-start with a large "spinning up" page that exceeds
+cron-job.org's response-size limit ("output too large"), so this path is
+flaky. Prefer GitHub Actions above.
 
 1. Create a free account at <https://cron-job.org>.
 2. New cron job:

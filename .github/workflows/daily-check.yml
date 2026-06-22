@@ -1,0 +1,31 @@
+name: Daily trip price check
+
+# Runs the price check once a day and on-demand. Runs directly on GitHub's
+# runner (no Render cold-start dance), reaching Supabase + SerpApi + Telegram.
+on:
+  schedule:
+    - cron: "30 4 * * *"   # 04:30 UTC = 10:00 IST
+  workflow_dispatch: {}     # adds a manual "Run workflow" button
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements-worker.txt
+
+      - name: Run price check (all active trips)
+        env:
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -c "from tracker import run_all; run_all()"
