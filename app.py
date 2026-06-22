@@ -228,7 +228,7 @@ if not hist.empty:
     c3.metric("🏨 Est. stay total", f"₹{est_total:,.0f}" if have_stay else "—")
 
     last_dt = hist["checked_at"].max()
-    c4.metric("🕒 Last checked", last_dt.strftime("%d %b %H:%M") + " IST" if pd.notnull(last_dt) else "—")
+    c4.metric("🕒 Last checked (IST)", last_dt.strftime("%d %b %H:%M") if pd.notnull(last_dt) else "—")
 else:
     c2.metric("✈️ Flights (latest sum)", "—")
     c3.metric("🏨 Est. stay total", "—")
@@ -411,7 +411,17 @@ with tab_prices:
                     sdf = pd.DataFrame(summary).sort_values("Latest ₹/night")
                     st.dataframe(sdf, use_container_width=True, hide_index=True)
 
-                    # Choose a hotel to chart its own price history.
+                    # Island-level overall trend (best-value = cheapest quality hotel).
+                    best = ho[(ho["is_best"]) & (ho["label"].astype(str).str.startswith(island))]
+                    if len(best) >= 2:
+                        best = best.sort_values("checked_at")
+                        st.caption("🏝️ Island best-value trend (cheapest quality hotel, ₹/night)")
+                        st.line_chart(
+                            best.set_index("checked_at")[["price"]].rename(columns={"price": "best value"}),
+                            height=160,
+                        )
+
+                    # Choose a specific hotel to chart its own price history.
                     hcfg = next((x for x in trip.get("hotels", []) if x.get("label") == island), None)
                     sel = st.selectbox(
                         "Select a hotel to see its price history",
@@ -435,38 +445,40 @@ with tab_prices:
 
                     # On-demand per-site prices (MakeMyTrip / Agoda / Booking...).
                     if hcfg and is_serpapi_configured():
-                        if admin and st.button("🔍 Show site prices for selected (1 credit)", key=f"site_btn_{island}"):
-                            from hotels import track_hotel
+                        if admin:
+                            if st.button("🔍 Show site prices for selected (1 credit)", key=f"site_btn_{island}"):
+                                from hotels import track_hotel
 
-                            with st.spinner("Fetching site prices..."):
-                                det = track_hotel(
-                                    name_to_token.get(sel, ""),
-                                    hcfg["query"], hcfg["checkin"], hcfg["checkout"],
-                                    int(trip.get("travelers", 1)),
-                                )
-                            # Save this lookup so it becomes a comparison point later.
-                            if det:
-                                try:
-                                    from tracker import log_manual_hotel
+                                with st.spinner("Fetching site prices..."):
+                                    det = track_hotel(
+                                        name_to_token.get(sel, ""),
+                                        hcfg["query"], hcfg["checkin"], hcfg["checkout"],
+                                        int(trip.get("travelers", 1)),
+                                    )
+                                if det:
+                                    try:
+                                        from tracker import log_manual_hotel
 
-                                    log_manual_hotel(trip_key, hcfg["id"], island, det)
-                                except Exception as exc:
-                                    print(f"log_manual_hotel failed: {exc}")
-                            st.session_state[f"sites_{island}"] = (sel, det)
-                        saved = st.session_state.get(f"sites_{island}")
-                        if saved:
-                            sname, det = saved
-                            if det and det.get("sites"):
-                                st.markdown(f"**{sname}** — price by site (₹/night):")
-                                st.dataframe(
-                                    pd.DataFrame(det["sites"]).rename(
-                                        columns={"source": "Site", "price": "₹/night"}
-                                    ),
-                                    use_container_width=True, hide_index=True,
-                                )
-                                st.caption("✅ Saved to price history — future checks will compare against this.")
-                            else:
-                                st.warning("No per-site prices returned for that hotel.")
+                                        log_manual_hotel(trip_key, hcfg["id"], island, det)
+                                    except Exception as exc:
+                                        print(f"log_manual_hotel failed: {exc}")
+                                st.session_state[f"sites_{island}"] = (sel, det)
+                            saved = st.session_state.get(f"sites_{island}")
+                            if saved:
+                                sname, det = saved
+                                if det and det.get("sites"):
+                                    st.markdown(f"**{sname}** — price by site (₹/night):")
+                                    st.dataframe(
+                                        pd.DataFrame(det["sites"]).rename(
+                                            columns={"source": "Site", "price": "₹/night"}
+                                        ),
+                                        use_container_width=True, hide_index=True,
+                                    )
+                                    st.caption("✅ Saved to price history — future checks will compare against this.")
+                                else:
+                                    st.warning("No per-site prices returned for that hotel.")
+                        else:
+                            st.caption("🔑 Enter the admin password (sidebar) to fetch live site-wise prices for the selected hotel.")
 
 
 # ============================== EXPENSES TAB ============================== #
