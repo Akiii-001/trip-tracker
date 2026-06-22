@@ -185,7 +185,12 @@ except Exception:
 
 hist = pd.DataFrame(hist_rows)
 if not hist.empty:
-    hist["checked_at"] = pd.to_datetime(hist["checked_at"], errors="coerce")
+    # Stored timestamps are UTC; convert to IST for all display/charts.
+    hist["checked_at"] = (
+        pd.to_datetime(hist["checked_at"], errors="coerce", utc=True)
+        .dt.tz_convert("Asia/Kolkata")
+        .dt.tz_localize(None)
+    )
     if "item_type" not in hist.columns:
         hist["item_type"] = "flight"
 
@@ -223,7 +228,7 @@ if not hist.empty:
     c3.metric("🏨 Est. stay total", f"₹{est_total:,.0f}" if have_stay else "—")
 
     last_dt = hist["checked_at"].max()
-    c4.metric("🕒 Last checked", last_dt.strftime("%d %b %H:%M") if pd.notnull(last_dt) else "—")
+    c4.metric("🕒 Last checked", last_dt.strftime("%d %b %H:%M") + " IST" if pd.notnull(last_dt) else "—")
 else:
     c2.metric("✈️ Flights (latest sum)", "—")
     c3.metric("🏨 Est. stay total", "—")
@@ -406,24 +411,31 @@ with tab_prices:
                     sdf = pd.DataFrame(summary).sort_values("Latest ₹/night")
                     st.dataframe(sdf, use_container_width=True, hide_index=True)
 
-                    best = ho[(ho["is_best"]) & (ho["label"].astype(str).str.startswith(island))]
-                    if len(best) >= 2:
-                        best = best.sort_values("checked_at")
-                        st.caption("Best-value trend (₹/night)")
+                    # Choose a hotel to chart its own price history.
+                    hcfg = next((x for x in trip.get("hotels", []) if x.get("label") == island), None)
+                    sel = st.selectbox(
+                        "Select a hotel to see its price history",
+                        list(name_to_token.keys()),
+                        key=f"hsel_{island}",
+                    )
+                    sel_token = name_to_token.get(sel, "")
+                    sel_item_id = f"{trip_key}:hotel:{hcfg['id']}:{sel_token}" if hcfg else ""
+                    sel_rows = roster[roster["item_id"].astype(str) == sel_item_id].sort_values("checked_at")
+                    if len(sel_rows) >= 2:
+                        st.caption(f"📈 {sel} — price history (₹/night, times in IST)")
                         st.line_chart(
-                            best.set_index("checked_at")[["price"]].rename(columns={"price": "best value"}),
-                            height=150,
+                            sel_rows.set_index("checked_at")[["price"]].rename(columns={"price": sel}),
+                            height=180,
+                        )
+                    elif len(sel_rows) == 1:
+                        st.caption(
+                            f"{sel}: ₹{int(sel_rows.iloc[0]['price'])}/night — only one data point so far; "
+                            f"the trend line appears after the next daily check."
                         )
 
                     # On-demand per-site prices (MakeMyTrip / Agoda / Booking...).
-                    hcfg = next((x for x in trip.get("hotels", []) if x.get("label") == island), None)
                     if hcfg and is_serpapi_configured():
-                        sel = st.selectbox(
-                            "Inspect site-wise prices for",
-                            list(name_to_token.keys()),
-                            key=f"site_sel_{island}",
-                        )
-                        if admin and st.button("🔍 Show site prices (1 credit)", key=f"site_btn_{island}"):
+                        if admin and st.button("🔍 Show site prices for selected (1 credit)", key=f"site_btn_{island}"):
                             from hotels import track_hotel
 
                             with st.spinner("Fetching site prices..."):
