@@ -73,6 +73,7 @@ def search_candidates(
     adults: int = 1,
     max_price_per_night: float | None = None,
     limit: int = 40,
+    sort_by_rating: bool = True,
 ) -> list[dict[str, Any]]:
     """Return ALL hotels from one area search (one credit), filtered by the
     per-night price ceiling. Each item:
@@ -87,6 +88,10 @@ def search_candidates(
           "currency": str,
           "sites": [{source, price}],   # may be partial in list view
         }
+
+    sort_by_rating=True biases results to the highest-rated hotels (good for
+    the daily best-value scan). Set False for a name search so Google's
+    relevance ranking surfaces the specific hotel you typed.
     """
     if not is_hotel_provider_configured():
         return []
@@ -102,8 +107,9 @@ def search_candidates(
         "currency": CURRENCY,
         "gl": "in",
         "hl": "en",
-        "sort_by": _SORT_HIGHEST_RATING,
     }
+    if sort_by_rating:
+        params["sort_by"] = _SORT_HIGHEST_RATING
 
     try:
         data = serpapi_search(params)

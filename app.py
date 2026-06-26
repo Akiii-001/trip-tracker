@@ -355,7 +355,10 @@ with tab_plan:
                     from hotels import search_candidates
 
                     with st.spinner("Searching Google Hotels..."):
-                        res = search_candidates(q, stay["checkin"], stay["checkout"], int(travelers))
+                        res = search_candidates(
+                            q, stay["checkin"], stay["checkout"], int(travelers),
+                            sort_by_rating=False,
+                        )
                     st.session_state[f"wsres_{trip_key}"] = res
 
                 res = st.session_state.get(f"wsres_{trip_key}")
