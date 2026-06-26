@@ -337,7 +337,7 @@ with tab_plan:
         st.caption("No pinned hotels yet.")
 
     if admin and is_serpapi_configured():
-        with st.expander("➕ Add a hotel by search (1 credit)"):
+        if st.checkbox("➕ Add a hotel by search (uses 1 credit per search)", key=f"wsexp_{trip_key}"):
             stays = trip.get("hotels", [])
             if not stays:
                 st.caption("Add an island/stay row above and save first (needed for dates).")
@@ -360,6 +360,7 @@ with tab_plan:
 
                 res = st.session_state.get(f"wsres_{trip_key}")
                 if res:
+                    st.success(f"Found {len(res)} hotels — pick one to track:")
                     rdf = pd.DataFrame([
                         {"Hotel": c["hotel_name"], "★": c["rating"], "Reviews": c["reviews"],
                          "₹/night": round(c["price"])}
@@ -383,7 +384,7 @@ with tab_plan:
                             st.success(f"Added '{chosen}' to watchlist.")
                             st.rerun()
                 elif f"wsres_{trip_key}" in st.session_state:
-                    st.warning("No hotels found for that search.")
+                    st.warning("No hotels found for that search. Try a broader term (e.g. just 'Havelock').")
 
     if not admin:
         st.info("👀 View-only — enter the admin password in the sidebar to edit or run checks.")
