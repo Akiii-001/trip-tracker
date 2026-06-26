@@ -322,6 +322,69 @@ with tab_plan:
         },
     )
 
+    # ---- Watchlist management (specific hotels, +1 credit/day each) ---- #
+    st.markdown("#### ⭐ Watchlist (specific hotels)")
+    st.caption("Pin specific hotels to track daily (+1 credit/day each), even ones not in the island list.")
+    wl_cur = trip.get("watchlist") or []
+    if wl_cur:
+        for w in wl_cur:
+            wc = st.columns([6, 1])
+            wc[0].write(f"⭐ **{w.get('label','')}** · {w.get('checkin','')}→{w.get('checkout','')}")
+            if admin and wc[1].button("Remove", key=f"plremove_{w['id']}"):
+                save_trip(trip_key, {**trip, "watchlist": [x for x in wl_cur if x.get('id') != w.get('id')]})
+                st.rerun()
+    else:
+        st.caption("No pinned hotels yet.")
+
+    if admin and is_serpapi_configured():
+        with st.expander("➕ Add a hotel by search (1 credit)"):
+            stays = trip.get("hotels", [])
+            if not stays:
+                st.caption("Add an island/stay row above and save first (needed for dates).")
+            else:
+                stay_pick = st.selectbox(
+                    "For which stay (uses its check-in/out dates)",
+                    [h.get("label", "") for h in stays], key=f"wsstay_{trip_key}",
+                )
+                stay = next((h for h in stays if h.get("label") == stay_pick), stays[0])
+                q = st.text_input(
+                    "Search hotels (type a name or area, e.g. 'Sea Shell Havelock')",
+                    value=stay.get("query", ""), key=f"wsq_{trip_key}",
+                )
+                if st.button("🔎 Search (1 credit)", key=f"wsbtn_{trip_key}"):
+                    from hotels import search_candidates
+
+                    with st.spinner("Searching Google Hotels..."):
+                        res = search_candidates(q, stay["checkin"], stay["checkout"], int(travelers))
+                    st.session_state[f"wsres_{trip_key}"] = res
+
+                res = st.session_state.get(f"wsres_{trip_key}")
+                if res:
+                    rdf = pd.DataFrame([
+                        {"Hotel": c["hotel_name"], "★": c["rating"], "Reviews": c["reviews"],
+                         "₹/night": round(c["price"])}
+                        for c in res
+                    ])
+                    st.dataframe(rdf, use_container_width=True, hide_index=True)
+                    chosen = st.selectbox("Add which hotel?", [c["hotel_name"] for c in res], key=f"wschoose_{trip_key}")
+                    if st.button("📌 Add to watchlist", key=f"wsadd_{trip_key}"):
+                        cc = next(c for c in res if c["hotel_name"] == chosen)
+                        wl2 = list(trip.get("watchlist") or [])
+                        wid = f"{stay.get('id', 'x')}-{cc['property_token'][:8]}"
+                        if any(x.get("id") == wid for x in wl2):
+                            st.info("Already in watchlist.")
+                        else:
+                            wl2.append({
+                                "id": wid, "label": chosen, "property_token": cc["property_token"],
+                                "query": q, "checkin": stay["checkin"], "checkout": stay["checkout"],
+                                "target": None, "enabled": True,
+                            })
+                            save_trip(trip_key, {**trip, "watchlist": wl2})
+                            st.success(f"Added '{chosen}' to watchlist.")
+                            st.rerun()
+                elif f"wsres_{trip_key}" in st.session_state:
+                    st.warning("No hotels found for that search.")
+
     if not admin:
         st.info("👀 View-only — enter the admin password in the sidebar to edit or run checks.")
     col_save, col_check = st.columns(2)
