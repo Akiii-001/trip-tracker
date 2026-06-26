@@ -334,6 +334,7 @@ with tab_plan:
                 "flights": _clean_records(flights_edited),
                 "hotels": _clean_records(hotels_edited),
                 "expenses": trip.get("expenses"),  # preserve expenses
+                "watchlist": trip.get("watchlist"),  # preserve watchlist
             }
             save_trip(trip_key, new_cfg)
             st.success("Saved.")
@@ -477,8 +478,52 @@ with tab_prices:
                                     st.caption("✅ Saved to price history — future checks will compare against this.")
                                 else:
                                     st.warning("No per-site prices returned for that hotel.")
+
+                            # Add the selected hotel to the daily watchlist (+1 credit/day).
+                            if st.button("📌 Track this hotel daily (watchlist, +1 credit/day)", key=f"watch_btn_{island}"):
+                                wl = list(trip.get("watchlist") or [])
+                                wid = f"{hcfg['id']}-{sel_token[:8]}"
+                                if any(x.get("id") == wid for x in wl):
+                                    st.info("Already in your watchlist.")
+                                else:
+                                    wl.append({
+                                        "id": wid, "label": sel, "property_token": sel_token,
+                                        "query": hcfg["query"], "checkin": hcfg["checkin"],
+                                        "checkout": hcfg["checkout"], "target": None, "enabled": True,
+                                    })
+                                    save_trip(trip_key, {**trip, "watchlist": wl})
+                                    st.success(f"Added '{sel}' to daily watchlist (+1 credit/day).")
+                                    st.rerun()
                         else:
                             st.caption("🔑 Enter the admin password (sidebar) to fetch live site-wise prices for the selected hotel.")
+
+        # ---- Watchlist (specific hotels tracked daily, 1 credit each) ---- #
+        watch = trip.get("watchlist") or []
+        if watch:
+            st.markdown("### ⭐ Watchlist (tracked daily)")
+            st.caption("Specific hotels you pinned — each uses 1 extra credit/day and shows per-site prices in alerts.")
+            for w in watch:
+                wid_full = f"{trip_key}:watch:{w['id']}"
+                wrows = ho[ho["item_id"].astype(str) == wid_full].sort_values("checked_at") if "item_id" in ho.columns else ho.iloc[0:0]
+                cols = st.columns([3, 1, 1, 1])
+                cols[0].markdown(f"**{w.get('label','')}**")
+                if not wrows.empty:
+                    last = wrows.iloc[-1]
+                    cols[1].metric("Latest", f"₹{last['price']:,.0f}")
+                    cols[2].metric("Lowest", f"₹{wrows['price'].min():,.0f}")
+                    src = last.get("source") or ""
+                    cols[3].caption(f"cheapest: {src}" if src else "")
+                else:
+                    cols[1].caption("no data yet")
+                if len(wrows) >= 2:
+                    st.line_chart(
+                        wrows.set_index("checked_at")[["price"]].rename(columns={"price": w.get("label", "hotel")}),
+                        height=150,
+                    )
+                if admin and st.button("🗑️ Remove from watchlist", key=f"unwatch_{w['id']}"):
+                    newwl = [x for x in watch if x.get("id") != w.get("id")]
+                    save_trip(trip_key, {**trip, "watchlist": newwl})
+                    st.rerun()
 
 
 # ============================== EXPENSES TAB ============================== #

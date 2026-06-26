@@ -230,7 +230,7 @@ def _evaluate_and_alert(
 # ----------------------------- main entry ----------------------------- #
 
 
-def run_check(trip_key: str | None = None) -> dict[str, Any]:
+def run_check(trip_key: str | None = None, send_summary: bool = False) -> dict[str, Any]:
     """Run one full check for a single trip. Skips trips that have started.
 
     Returns a small summary dict (counts + any errors) for logging / health.
@@ -257,6 +257,9 @@ def run_check(trip_key: str | None = None) -> dict[str, Any]:
     checked = 0
     alerts = 0
     errors: list[str] = []
+    flights_total = 0.0
+    hotel_best: dict[str, float] = {}
+    watch_results: list[tuple[str, float, str]] = []
 
     # --- Flights --- #
     for f in trip.get("flights", []):
@@ -276,6 +279,7 @@ def run_check(trip_key: str | None = None) -> dict[str, Any]:
             if not res:
                 errors.append(f"flight {f['id']}: no offers found")
                 continue
+            flights_total += res["price"]
             stops = res["stops_out"]
             extra = (
                 f"{res['airline']} · "
@@ -352,6 +356,7 @@ def run_check(trip_key: str | None = None) -> dict[str, Any]:
                     min_reviews=int(h.get("min_reviews") or 0),
                 )
                 if best:
+                    hotel_best[island] = best["price"]
                     extra = (
                         f"{best['hotel_name']} (★{best['rating']}, "
                         f"{best['reviews']} reviews) · {len(cands)} hotels tracked"
@@ -388,6 +393,71 @@ def run_check(trip_key: str | None = None) -> dict[str, Any]:
             except Exception as exc:
                 errors.append(f"hotel {h.get('id')}: {exc}")
 
+    # --- Watchlist: specific hotels tracked individually (1 credit each) --- #
+    if is_hotel_provider_configured():
+        for w in trip.get("watchlist", []):
+            if not w.get("enabled", True):
+                continue
+            try:
+                det = track_hotel(
+                    w.get("property_token", ""),
+                    w["query"], w["checkin"], w["checkout"], travelers,
+                )
+                checked += 1
+                if not det:
+                    errors.append(f"watch {w.get('id')}: not found")
+                    continue
+                site = det.get("cheapest_site", "")
+                watch_results.append((det["hotel_name"], det["price"], site))
+
+                def _w_enrich(_d=det):
+                    if _d.get("sites"):
+                        s = _d["sites"][0]
+                        line = f"🏷️ Cheapest on {s['source']} ₹{s['price']:,.0f}/night"
+                        if s.get("link"):
+                            line += f"\n🔗 {s['link']}"
+                        return line
+                    return ""
+
+                if _evaluate_and_alert(
+                    item_id=f"{trip_key}:watch:{w['id']}",
+                    item_type="hotel",
+                    label=f"⭐ {det['hotel_name']}",
+                    price=det["price"],
+                    currency=det["currency"],
+                    target=w.get("target"),
+                    extra=f"★{det['rating']} · watchlist",
+                    all_state=all_state,
+                    source=site,
+                    trip=trip_key,
+                    enrich=_w_enrich,
+                ):
+                    alerts += 1
+            except Exception as exc:
+                errors.append(f"watch {w.get('id')}: {exc}")
+
+    # --- Daily summary message (only on the scheduled run) --- #
+    if send_summary and is_telegram_configured():
+        try:
+            from datetime import datetime as _dt
+            from zoneinfo import ZoneInfo
+
+            now_ist = _dt.now(ZoneInfo("Asia/Kolkata"))
+            lines = [f"🌅 *{trip.get('name', 'Trip')}* — daily check ({now_ist:%a %d %b})"]
+            if flights_total:
+                lines.append(f"✈️ Flights: ₹{flights_total:,.0f}")
+            if hotel_best:
+                hb = "  ·  ".join(
+                    f"{k.split(' (')[0]} ₹{v:,.0f}" for k, v in hotel_best.items()
+                )
+                lines.append(f"🏨 Best/night: {hb}")
+            for nm, pr, si in watch_results:
+                lines.append(f"⭐ {nm}: ₹{pr:,.0f}/night" + (f" ({si})" if si else ""))
+            lines.append(f"🔔 {alerts} alert(s) today")
+            send_telegram("\n".join(lines))
+        except Exception as exc:
+            print(f"summary send failed: {exc}")
+
     summary = {
         "checked": checked,
         "alerts": alerts,
@@ -406,7 +476,7 @@ def run_all() -> dict[str, Any]:
         cfg = load_trip(t["key"])
         if not is_trip_active(cfg):
             continue
-        s = run_check(t["key"])
+        s = run_check(t["key"], send_summary=True)
         totals["checked"] += s.get("checked", 0)
         totals["alerts"] += s.get("alerts", 0)
         totals["trips"] += 1
